@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { EmailUnreadEnum } from '@/enums/email-enum.js'
 
 export const useEmailStore = defineStore('email', {
     state: () => ({
@@ -22,11 +23,14 @@ export const useEmailStore = defineStore('email', {
     },
     actions: {
         fetchList(request) {
-            request(1).then(data => {
-                const list = Array.isArray(data) ? data : data?.list
-                this.applyFullList(list)
-            }).catch(e => {
-                console.error(e)
+            return request(0).then(data => {
+                request(1).then(fullData => {
+                    const list = Array.isArray(fullData) ? fullData : fullData?.list
+                    this.applyFullList(list)
+                }).catch(e => {
+                    console.error(e)
+                })
+                return data
             })
             return request(0)
         },
@@ -36,6 +40,13 @@ export const useEmailStore = defineStore('email', {
             for (const item of list) {
                 if (!item?.emailId) continue
                 if (!item.attList) item.attList = []
+                // 完整列表可能早于「标已读」返回，避免把本地已读状态盖回未读
+                const prev = this.detailMap[item.emailId]
+                const keepRead = prev?.unread === EmailUnreadEnum.READ
+                    || (currentId === item.emailId && this.contentData.email?.unread === EmailUnreadEnum.READ)
+                if (keepRead) {
+                    item.unread = EmailUnreadEnum.READ
+                }
                 this.detailMap[item.emailId] = item
                 if (currentId && item.emailId === currentId) {
                     this.contentData.email = item
@@ -54,6 +65,15 @@ export const useEmailStore = defineStore('email', {
                 text: '',
                 attList: [],
                 recipient: email?.recipient || '[]',
+            }
+        },
+        markListRead(emailId) {
+            const scrolls = [this.emailScroll, this.starScroll, this.sendScroll]
+            for (const scroll of scrolls) {
+                const list = scroll?.emailList
+                if (!list?.length) continue
+                const item = list.find(e => e.emailId === emailId)
+                if (item) item.unread = EmailUnreadEnum.READ
             }
         },
     },
